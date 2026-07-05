@@ -1,2 +1,2 @@
-[پارسی](#) | **English**
+**English** | [پارسی](README.md)
 
