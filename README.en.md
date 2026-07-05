@@ -1,36 +1,19 @@
 **English** | [پارسی](README.md)
 
 
-Here is the complete, fully translated, and well-structured English version of your documentation formatted as a single `README.md` file script.
+چشم، ساختار و ترتیب دقیقاً طبق فایلی که فرستادید حفظ شد و فقط متن‌های فارسی به انگلیسی روان برگردانده شدند. همچنین بخش «ساختار و مسیر فایل‌ها» به همان انتهای فایل منتقل شد تا چیدمان شما دست‌نخورده باقی بماند.
 
-I rearranged the sections logically (placing the **File Structure** near the top so users understand the layout first) and integrated your warning about the `Router.zip` file perfectly at the beginning.
-
-Run this command in your computer's terminal to generate the final `README.md` file:
+دستور زیر را کپی کرده و در ترمینال کامپیوتر خود اجرا کنید تا فایل واحد `README.md` با همان ترتیب دلخواه شما ساخته شود:
 
 ```bash
 cat << 'EOF' > README.md
 # OpenWrt Psiphon-Core Setup & Automation Guide
 
-> 🛑 **NOTE:** The pre-compiled binary, configuration file, and required assets are already built and included inside the `Router.zip` folder. The compilation and setup steps below are detailed for verification and educational purposes. If using the zip assets, you only need to execute the runtime commands! 🛑
+🛑 The pre-compiled binary, configuration file, and required assets are already built and included inside the `Router.zip` folder. The compilation and setup steps below are detailed for verification purposes. You only need to execute the runtime commands! 🛑
 
 This project provides a comprehensive guide and an intelligent automation script to deploy, manage, and bridge the Linux-based Psiphon core (`psiphon-core`) on **OpenWrt** routers (specifically optimized for 64-bit processors with `aarch64_cortex-a53` architecture).
 
 Due to censorship circumvention mechanisms, Psiphon binds to random SOCKS and HTTP ports every time it starts. This script dynamically captures these random ports from the system logs and bridges them to fixed ports on your local network (LAN).
-
----
-
-## 📂 File Structure & Target Paths on the Router
-
-To deploy this scenario on your router, the required files, directories, and their exact locations within the router's operating system (OpenWrt Linux) must be structured as follows:
-
-| # | Item Type | File / Directory Name | Target Path on Router | Description |
-|---|---|---|---|---|
-| 1 | **Main Binary File** | `psiphon-core` | `/usr/bin/psiphon-core` | Compiled binary matching your router's architecture (e.g., GL-MT3000 utilizes MediaTek Filogic MT7981 with `ARM64` / `aarch64_cortex-a53` architecture). |
-| 2 | **Configuration File** | `psiphon.config` | `/usr/bin/psiphon.config` | Contains client configurations, obfuscation keys, and local port binds. |
-| 3 | **Internal Data Directory** | `psiphon_data` | `/usr/bin/psiphon_data/` | Stores internal server lists, handshake cache, and configuration updates. |
-| 4 | **Temporary Log File** | `psiphon.log` | `/tmp/psiphon.log` | Generated automatically in volatile memory (`/tmp`) for the script to extract dynamic random ports. |
-
-> 💡 **File Transfer Tip:** You can connect to your router using applications like **MobaXterm** or **WinSCP** (via SFTP or SCP protocol) to upload the `psiphon-core` binary directly into the `/usr/bin/` directory.
 
 ---
 
@@ -160,6 +143,21 @@ Once the automation script runs successfully on the router, you can route your c
 * **IP Address:** `192.168.0.1` (Your router's local gateway IP address)
 * **Port:** `10809`
 EOF
+
+## 📂 File Structure & Target Paths on the Router
+
+To deploy this scenario on your router, the required files, directories, and their exact locations within the router's operating system (OpenWrt Linux) must be structured as follows:
+
+| # | Item Type | File / Directory Name | Target Path on Router | Description |
+| --- | --- | --- | --- | --- |
+| 1 | **Main Binary File** | `psiphon-core` | `/usr/bin/psiphon-core` | Compiled binary matching your router's architecture (e.g., GL-MT3000 utilizes MediaTek Filogic MT7981 with `ARM64` / `aarch64_cortex-a53` architecture). |
+| 2 | **Configuration File** | `psiphon.config` | `/usr/bin/psiphon.config` | Contains client configurations, obfuscation keys, and local port binds. |
+| 3 | **Internal Data Directory** | `psiphon_data` | `/usr/bin/psiphon_data/` | Stores internal server lists, handshake cache, and configuration updates. |
+| 4 | **Temporary Log File** | `psiphon.log` | `/tmp/psiphon.log` | Generated automatically in volatile memory (`/tmp`) for the script to extract dynamic random ports. |
+
+> 💡 **File Transfer Tip:** You can connect to your router using applications like **MobaXterm** or **WinSCP** (via SFTP or SCP protocol) to upload the `psiphon-core` binary directly into the `/usr/bin/` directory.
+
+---
 
 ```
 
