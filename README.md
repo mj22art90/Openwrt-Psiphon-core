@@ -2,7 +2,7 @@
 
 
 
-# OpenWrt 24.10 Psiphon-Core Setup & Automation Guide
+# OpenWrt 24.10 & 25 Psiphon-Core Setup & Automation Guide
 
 🛑فایل کامپایل شده و کانفیگ و... ساخته شده در پوشه `Router.zip` وجود دارد و برای اطمینان مراحل ساخت شرح داده شده است؛ فقط دستورات را باید اجرا کنید🛑
 
