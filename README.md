@@ -358,7 +358,3 @@ echo "Everything related to Psiphon has been completely wiped!"
 
 ```
 
-```
----
-
-```
