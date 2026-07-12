@@ -42,7 +42,7 @@ go build -ldflags="-s -w" -o psiphon-core .
 
 
 ```
-# برای  Google Wifi (مدل AC-1304) دارای پردازنده ۳۲ بیتی با معماری ARMv7 است،
+# برای  Google Wifi (مدل AC-1304) دارای پردازنده 32 بیتی با معماری ARMv7 است،
  
 ```bash
 # برای powershell
