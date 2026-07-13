@@ -85,9 +85,9 @@ mkdir -p /usr/bin/psiphon_data
 # به‌روزرسانی مخازن روتر و نصب ابزار socat جهت ریدایرکت ترافیک
 OpenWrt 24
 opkg update && opkg install socat
-OpenWrt 25
-apk --update-cache add socat
 
+OpenWrt 25
+apk update && apk add socat
 
 ```
 
