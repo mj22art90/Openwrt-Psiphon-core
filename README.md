@@ -273,8 +273,6 @@ chmod +x /tmp/install_psiphon_luci.sh
 /tmp/install_psiphon_luci.sh
 rm /tmp/install_psiphon_luci.sh
 
----
-
 ```
 
 ## ⚙️ ۴. ایجاد اسکریپت سرویس هوشمند سیستم (`/etc/init.d/psiphon`)
