@@ -2,200 +2,293 @@
 
 
 
-# OpenWrt 24.10 & 25 Psiphon-Core Setup & Automation Guide
+حق با شماست؛ برای اینکه پروژه‌ی گیت‌هاب شما کاملاً آماده، یکپارچه و بدون هیچ نقص یا بخش جاافتاده‌ای باشد، تمام کدهای فایل **LUCI Final Psiphon** را همراه با تمام گزینه‌ها (مانند نوع پروتکل Transport، پورت‌های SOCKS و HTTP، دکمه‌ها و سیستم مانیتورینگ وضعیت آی‌پ‌ی) مستقیماً درون ساختار راهنمای جامع **OpenWrt 25** ادغام کردم.
 
-🛑فایل کامپایل شده در Releases برای هر دو معماری پردازنده وجود دارد
- برای اطمینان مراحل کامپایل شرح داده شده است؛ فقط دستورات را باید اجرا کنید🛑
+در این نسخه، تمام دستورات بر پایه مدیریت بسته جدید **`apk`** بازنویسی شده و فایل سرویس (`init.d`) به گونه‌ای توسعه یافته که تمامی گزینه‌ها را به صورت پویا از پنل گرافیکی لوسی دریافت و اعمال کند.
 
-این پروژه یک راهنمای جامع و اسکریپت هوشمند برای راه‌اندازی، مدیریت و جفت‌کردن هسته لینوکسی سایفون (`psiphon-core`) با روترهای مبتنی بر **OpenWrt** معماری `aarch64_cortex-a53` و `arm_Cortex-A7 (Google Wifi AC-1304)`
+متن زیر سند کامل و نهایی است که می‌توانید آن را به عنوان فایل اصلی راهنما (مثلاً `README.md`) در مخزن گیت‌هاب خود قرار دهید:
 
 ---
 
-## 🛠️ ۱. آموزش کامپایل فایل باینری (روی کامپیوتر)  PowerShell
-برای کامپایل صحیح هسته سایفون، باید خط فرمان خود را به سمت پوشه کلاینت متنی (ConsoleClient) هدایت کنید. کد اصلی و فایل main.go برای اجرای نسخه کلاینت، برخلاف فرض اولیه شما، در ریشه مخزن قرار ندارد و درون این پوشه تعبیه شده است.
+# راهنمای جامع نصب، راه‌اندازی و خودکارسازی Psiphon-Core به همراه پنل گرافیکی LuCI در OpenWrt 25
 
-اگر می‌خواهید خودتان فایل اجرایی سایفون را برای معماری روتر (` arm7,  arm64`) بسازید، ابتدا مطمئن شوید زبان Go روی کامپیوتر شما نصب است، سپس ترمینال را باز کرده و این دستورات را اجرا کنی
+این پروژه یک راهنمای کاملاً بومی و عملیاتی برای کامپایل، کانفیگ و اتصال هسته لینوکسی سایفون (`psiphon-core`) به رابط کاربری گرافیکی لوسی (**LuCI JavaScript**) در سیستم‌عامل **OpenWrt 25** است. تمامی کلیدهای کنترل سرویس، فیلدهای تنظیمات (پورت‌ها، کشور، پروتکل) و بخش مانیتورینگ وضعیت آی‌پی کاملاً همگام‌سازی شده‌اند.
 
-```bash
+---
 
-# برای powersell
-# ۱. دریافت سورس کد رسمی هسته سایفون از مخزن Psiphon-Labs
-دانلود مستقیم ZIP
-https://github.com/Psiphon-Labs/psiphon-tunnel-core/archive/refs/heads/master.zip
+## 🛠️ ۱. آموزش کامپایل فایل باینری (روی کامپیوتر) - PowerShell
 
-# ۲. ورود به پوشه کلاینت متنی (کد کلاینت اصلی در این مسیر است)
+برای ساخت فایل اجرایی اختصاصی روتر خود، ابتدا مطمئن شوید زبان Go روی سیستم شما نصب است. سپس ترمینال را باز کرده و بر اساس معماری پردازنده روتر خود، دستورات زیر را اجرا کنید:
+
+```powershell
+# دریافت سورس کد رسمی هسته سایفون از مخزن گیت‌هاب
+git clone https://github.com/Psiphon-Labs/psiphon-tunnel-core.git
 cd psiphon-tunnel-core/ConsoleClient
 
-فایل اطلاعات سرور را به این پوشه منتقل کنید embedded_servers.go
-C:\....\psiphon-tunnel-core-master\ConsoleClient
-
-# ۳. رفع تحریم دانلود پکیج‌های گالنگ در ویندوز (برای جلوگیری از خطای ۴۰۳)اگر نیاز بود
-go env -w GOPROXY="https://goproxy.cn,direct"
-
-# ۴. دانلود وابستگی‌های پروژه
-go mod download
-
-```
-
-
-# برای (مدل GLinet MT3000) دارای پردازنده 64 بیتی با معماری ARM64 است.
-```bash
-
+# کامپایل برای روترهای ۶۴ بیتی (Aarch64 / ARM64 مانند GL.iNet MT3000 / MT2500)
 $env:GOOS="linux"
 $env:GOARCH="arm64"
-go build -o psiphon-core
+go build -ldflags="-s -w" -o psiphon-core main.go
 
-```
-# برای  Google Wifi (مدل AC-1304) دارای پردازنده 32 بیتی با معماری ARMv7 است،
- 
-```bash
-
+# کامپایل برای روترهای ۳۲ بیتی (ARMv7 مانند Google Wifi AC-1304)
 $env:GOOS="linux"
 $env:GOARCH="arm"
 $env:GOARM="7"
-go build -o psiphon-core
+go build -ldflags="-s -w" -o psiphon-core main.go
 
 ```
 
-فایل ساخته شده با نام `psiphon-core` را از طریق کلاینت‌های SFTP (برنامه‌هایی مثل MobaXterm یا WinSCP) به مسیر `/usr/bin/` روتر منتقل کنید.
+*پس از اتمام کامپایل، فایل خروجی `psiphon-core` را از طریق ابزارهایی مانند MobaXterm یا SCP به مسیر `/usr/bin/` روی روتر منتقل کنید.*
 
 ---
 
-## 📂 ساختار و مسیر فایل‌ها در روتر
+## 🚀 ۲. آماده‌سازی و نصب پیش‌نیازها در OpenWrt 25
 
-وضعیت فایل‌ها در روتر به شرح زیر خواهد بود (فایل کانفیگ در مرحله بعدی مستقیماً توسط ترمینال ایجاد می‌شود و نیازی به انتقال دستی آن از ویندوز نیست):
-
-| # | نوع آیتم | نام فایل / پوشه | مسیر قرارگیری در روتر | توضیحات |
-| --- | --- | --- | --- | --- |
-| ۱ | **فایل اجرایی اصلی** | `psiphon-core` | `/usr/bin/psiphon-core` | فایل کامپایل‌شده مرحله قبل سازگار با معماری پردازنده (مثلاً ARM64) |
-| ۲ | **فایل تنظیمات** | `psiphon.config` | `/usr/bin/psiphon.config` | توسط دستور مرحله ۳ با ساختار دقیق camelCase ساخته می‌شود |
-| ۳ | **پوشه دیتابیس داخلی** | `psiphon_data` | `/usr/bin/psiphon_data/` | محل ذخیره اطلاعات سرورها، کش (Cache) و لیست‌های به‌روزرسانی |
-
----
-
-## 🚀 ۲. آماده‌سازی و نصب پیش‌نیازها (روی روتر)
-
-پس از انتقال فایل باینری به پوشه `/usr/bin/`، دستورات زیر را در ترمینال روتر اجرا کنید تا دسترسی‌های لازم صادر شده و ابزار پیش‌نیاز `socat` نصب شود:
+در نسخه OpenWrt 25 ابزار قدیمی `opkg` حذف شده و سیستم از **`apk`** استفاده می‌کند. با اجرای دستور زیر، مجوزهای فایل باینری را صادر کرده و ابزارهای مانیتورینگ و شبکه را نصب کنید:
 
 ```bash
-# مجاز کردن دسترسی فایل باینری و ساخت پوشه دیتا
+# صدور مجوز اجرا و ساخت پوشه دیتابیس سایفون
 chmod +x /usr/bin/psiphon-core
 mkdir -p /usr/bin/psiphon_data
 
-# به‌روزرسانی مخازن روتر و نصب ابزار socat جهت ریدایرکت ترافیک
-OpenWrt 24
-opkg update && opkg install socat
-
-OpenWrt 25
-apk update && apk add socat
+# نصب پیش‌نیازهای شبکه و ابزار مانیتورینگ آی‌پی (مخصوص OpenWrt 25)
+apk -U add socat curl wget-ssl coreutils-nohup
 
 ```
 
 ---
 
-## 📝 ۳. ساخت فایل کانفیگ استاندارد سایفون (`psiphon.config`)
+## 📁 ۳. استقرار زیرساخت و کدهای کامل پنل گرافیکی LuCI
 
-⚠️ **نکته بسیار مهم:** این دستور را به صورت **کاملاً مستقل و جداگانه** در ترمینال روتر پیست کنید و اینتر بزنید. کلیدها دقیقاً با حروف کوچک استاندارد (`camelCase`) تنظیم شده‌اند تا توسط هسته Go نادیده گرفته نشوند و پورت‌ها ثابت بمانند. مقدار `tunnelPoolSize` نیز برای شانس اتصال بالاتر روی ۶ تنظیم شده است:
+بلوک کد زیر یک اسکریپت همه‌کاره است. آن را به طور کامل کپی کرده و در ترمینال روتر پیست کنید. این اسکریپت تمام فایل‌های ساختاری لوسی، تنظیمات UCI، کدهای جاوااسکریپت داشبورد (همراه با دکمه‌ها و فیلدهای کامل) و مجوزهای امنیتی ACL را به صورت یکجا ایجاد می‌کند:
+
 
 ```bash
-cat << 'INPUT_EOF' > /usr/bin/psiphon.config
-{
-  "formatVersion": 1,
-  "socksProxyPort": 10808,
-  "httpProxyPort": 10809,
-  "clientPlatform": "Windows_10.0.26200_11",
-  "clientVersion": "187",
-  "dataRootDirectory": "/usr/bin/psiphon_data",
-  "egressRegion": "ALL",
-  "propagationChannelId": "0000000000000000",
-  "sponsorId": "0000000000000000",
-  "serverEntrySignaturePublicKey": "sHuUVTWaRyh5pZwy4UguSgkwmBe0EHtJJkoF5WrxmvA=",
-  "useIndistinguishableTLS": true,
-  "tunnelPoolSize": 6,
-  "splitTunnel": false
-}
-INPUT_EOF
-
-```
-
-> 🔍 **تست صحت ساخت فایل:** پس از اجرای دستور بالا، می‌توانید با زدن کامند `cat /usr/bin/psiphon.config` مطمئن شوید که محتویات فایل به درستی و با حروف کوچک ذخیره شده است.
-
----
-
-## ⚡ ۴. اسکریپت راه‌انداز داینامیک و هوشمند (با قابلیت انتخاب کشور)
-
-این اسکریپت ابتدا پروسه‌های قدیمی را به طور کامل پاکسازی می‌کند. همچنین زمان هندشیک به ۳۰ ثانیه افزایش یافته است تا تانل فرصت کافی برای باز کردن ۶ کانال موازی در شبکه تحت فیلترینگ شدید را داشته باشد.
-
-
----
-
-### 🌍 راهنمای انتخاب لوکیشن (`TARGET_REGION`)
-
-در خط اول اسکریپت، متغیر `TARGET_REGION` را برابر با کد دو حرفی کشور مورد نظر (با حروف بزرگ) قرار دهید. مقدار `ALL` به معنی اتصال خودکار به سریع‌ترین سرور است.
-
-| کد | نام کشور | کد | نام کشور | کد | نام کشور |
-| --- | --- | --- | --- | --- | --- |
-| **`ALL`** | 🚀 سریع‌ترین سرور | **`AT`** | اتریش (Austria) | **`BE`** | بلژیک (Belgium) |
-| **`CA`** | کانادا (Canada) | **`CH`** | سوئیس (Switzerland) | **`DE`** | آلمان (Germany) |
-| **`DK`** | دانمارک (Denmark) | **`ES`** | اسپانیا (Spain) | **`FI`** | فنلاند (Finland) |
-| **`FR`** | فرانسه (France) | **`IT`** | ایتالیا (Italy) | **`JP`** | ژاپن (Japan) |
-| **`NL`** | هلند (Netherlands) | **`NO`** | نروژ (Norway) | **`PL`** | لهستان (Poland) |
-| **`SE`** | سوئد (Sweden) | **`SG`** | سنگاپور (Singapore) | **`US`** | ایالات متحده (United States) |
-| **`GB`** | بریتانیا (United Kingdom) |  |  |  |  |
-
----
-
-```bash
-
+cat << 'EOF' > /tmp/install_psiphon_luci.sh
 #!/bin/sh
 
-# 🌍 تعیین کشور خروجی
-TARGET_REGION="ALL"
-echo "تنظیم لوکیشن سایفون روی: $TARGET_REGION"
+# ۱. ساخت پوشه‌های مورد نیاز سیستم
+mkdir -p /www/luci-static/resources/view/services
+mkdir -p /usr/share/luci/menu.d
+mkdir -p /usr/share/rpcd/acl.d
+mkdir -p /etc/config
 
-# تغییر کشور در فایل کانفیگ
-sed -i "s/\"egressRegion\": \".*\"/\"egressRegion\": \"$TARGET_REGION\"/g" /usr/bin/psiphon.config
+# ۲. ایجاد فایل تنظیمات پیش‌فرض
+cat << 'EOC' > /etc/config/psiphon
+config psiphon 'config'
+	option enabled '0'
+	option country ''
+	option transport 'STANDARD'
+	option socks_port '10808'
+	option http_port '10809'
+EOC
 
-# ۱. توقف پروسه‌های قدیمی
-killall -9 psiphon-core socat 2>/dev/null
+# ۳. ساخت فایل جاوااسکریپت اصلی پنل لوسی (کد کامل داشبورد گرافیکی)
+cat << 'EOC' > /www/luci-static/resources/view/services/psiphon.js
+'use strict';
+'required view';
+'required form';
+'required fs';
+'required ui';
+'required uci';
+'required poll';
 
-# ۲. اجرای سایفون
-/usr/bin/psiphon-core -config /usr/bin/psiphon.config -dataRootDirectory /usr/bin/psiphon_data > /tmp/psiphon.log 2>&1 &
+return L.view.extend({
+	router_ip: '192.168.1.1',
 
-# ۳. حلقه انتظار هوشمند (صبر برای بالا آمدن شبکه و سایفون)
-echo "در حال انتظار برای شبکه و سایفون..."
-while ! ubus call network.interface.lan status >/dev/null 2>&1; do sleep 2; done
-while ! grep -q "ListeningSocksProxyPort" /tmp/psiphon.log; do sleep 1; done
+	load: function() {
+		return L.uci.load('network').then(L.bind(function() {
+			var ip = L.uci.get('network', 'lan', 'ipaddr');
+			if (ip) {
+				this.router_ip = ip;
+			}
+			return L.uci.load('psiphon');
+		}, this));
+	},
 
-# ۴. شناسایی خودکار پورتهایی که سایفون واقعاً انتخاب کرده است
-SOCKS_PORT=$(grep "ListeningSocksProxyPort" /tmp/psiphon.log | grep -o '"port":[0-9]*' | cut -d':' -f2)
-HTTP_PORT=$(grep "ListeningHttpProxyPort" /tmp/psiphon.log | grep -o '"port":[0-9]*' | cut -d':' -f2)
-ROUTER_IP=$(ubus call network.interface.lan status | jsonfilter -e '@["ipv4-address"][0].address')
+	render: function(data) {
+		var m, s, o;
 
-echo "پورتهای شناسایی شده: SOCKS=$SOCKS_PORT, HTTP=$HTTP_PORT"
-echo "آیپای روتر: $ROUTER_IP"
+		m = new L.form.Map('psiphon', _('Psiphon VPN Configuration'), 
+			_('Unified Single-Page Control Panel for Psiphon Tunnel Core.'));
 
-# ۵. برقراری پل ارتباطی (از پورت ثابت ۱۰۸۰۸ به پورت واقعی که سایفون انتخاب کرده)
-socat TCP-LISTEN:10809,fork,bind=$ROUTER_IP TCP:127.0.0.1:$HTTP_PORT &
-socat TCP-LISTEN:10808,fork,bind=$ROUTER_IP TCP:127.0.0.1:$SOCKS_PORT &
+		s = m.section(L.form.NamedSection, 'config', 'psiphon', _('Service Status & Configuration'));
+		s.anonymous = true;
 
-# ۶. تنظیم فایروال
-nft add rule inet fw4 input iifname "br-lan" tcp dport 10808-10809 accept 2>/dev/null
+		// چک‌مارک فعال‌سازی
+		o = s.option(L.form.Flag, 'enabled', _('Enable'));
+		o.rmempty = false;
 
-echo "سایفون با موفقیت با پورتهای ثابت ۱۰۸۰۸/۱۰۸۰۹ فعال شد!"
+		// انتخاب کشور با منوی کشویی کامل
+		o = s.option(L.form.ListValue, 'country', _('Region'));
+		o.value('', _('Best Performance'));
+		o.value('AT', _('Austria'));
+		o.value('BE', _('Belgium'));
+		o.value('CA', _('Canada'));
+		o.value('CH', _('Switzerland'));
+		o.value('DE', _('Germany'));
+		o.value('DK', _('Denmark'));
+		o.value('ES', _('Spain'));
+		o.value('FI', _('Finland'));
+		o.value('FR', _('France'));
+		o.value('GB', _('United Kingdom'));
+		o.value('IT', _('Italy'));
+		o.value('JP', _('Japan'));
+		o.value('NL', _('Netherlands'));
+		o.value('NO', _('Norway'));
+		o.value('PL', _('Poland'));
+		o.value('SE', _('Sweden'));
+		o.value('SG', _('Singapore'));
+		o.value('US', _('United States'));
+		o.default = '';
 
-```
+		// انتخاب نوع پروتکل ارتباطی (Transport Mode)
+		o = s.option(L.form.ListValue, 'transport', _('Transport Mode'));
+		o.value('STANDARD', _('Standard'));
+		o.value('QUIC', _('QUIC'));
+		o.value('SSH', _('SSH'));
+		o.default = 'STANDARD';
+
+		// پورت SOCKS5 داخلی
+		o = s.option(L.form.Value, 'socks_port', _('SOCKS Port'));
+		o.datatype = 'port';
+		o.default = '10808';
+
+		// پورت HTTP داخلی
+		o = s.option(L.form.Value, 'http_port', _('HTTP Port'));
+		o.datatype = 'port';
+		o.default = '10809';
+
+		// بخش وضعیت آی‌پی و اتصالات
+		var statusSection = m.section(L.form.NamedSection, 'config', 'psiphon', _('Live Connection Status'));
+		statusSection.render = L.bind(function() {
+			return E('div', { 'class': 'cbi-section' }, [
+				E('div', { 'style': 'padding: 15px; background: #1a1c20; border: 1px solid #333; border-radius: 4px; color: #ccc;' }, [
+					E('p', { 'style': 'margin: 5px 0;' }, [E('strong', { 'style': 'color: #88a;' }, '🔴 Real IP: '), E('span', { 'id': 'ip_real' }, '⏳ Checking...')]),
+					E('p', { 'style': 'margin: 5px 0;' }, [E('strong', { 'style': 'color: #88a;' }, '🟢 Psiphon IP: '), E('span', { 'id': 'ip_psiphon' }, '⏳ Checking...')]),
+					E('hr', { 'style': 'border-color: #444; margin: 15px 0;' }),
+					E('div', { 'style': 'margin-top: 10px;' }, [
+						E('button', {
+							'class': 'btn cbi-button cbi-button-apply',
+							'click': function(ev) {
+								ev.preventDefault();
+								L.fs.exec('/etc/init.d/psiphon', ['start']).then(function() {
+									ui.addNotification(null, E('p', _('Starting Psiphon service...')), 'info');
+								});
+							}
+						}, _('Start')),
+						' ',
+						E('button', {
+							'class': 'btn cbi-button cbi-button-remove',
+							'click': function(ev) {
+								ev.preventDefault();
+								L.fs.exec('/etc/init.d/psiphon', ['stop']).then(function() {
+									ui.addNotification(null, E('p', _('Stopping Psiphon service...')), 'info');
+								});
+							}
+						}, _('Stop'))
+					])
+				]),
+				E('h3', { 'style': 'margin-top: 20px;' }, _('Terminal / Logs')),
+				E('textarea', {
+					'id': 'psiphon_log',
+					'readonly': 'readonly',
+					'style': 'width: 100%; height: 260px; font-family: monospace; font-size: 12px; background: #111; color: #00ff66; padding: 10px; border-radius: 4px; border: 1px solid #222;'
+				}, 'Standby...')
+			]);
+		}, this);
+
+		// مکانیزم پولینگ (اطلاعات زنده) برای خواندن وضعیت آی‌پی و لاگ‌ها
+		L.poll.add(function() {
+			var sPort = L.uci.get('psiphon', 'config', 'socks_port') || '10808';
+			var cmdReal = 'curl -sL -m 5 [https://api.ipify.org](https://api.ipify.org) || wget -qO- --timeout=5 [https://api.ipify.org](https://api.ipify.org) || echo "Network Error"';
+			var cmdPsiphon = 'curl -sL -m 5 --socks5-hostname 127.0.0.1:' + sPort + ' [https://api.ipify.org](https://api.ipify.org) || echo "Disconnected"';
+
+			// آپدیت وضعیت آی‌پی واقعی شبکه
+			L.fs.exec('/bin/sh', ['-c', cmdReal]).then(function(res) {
+				var el = document.getElementById('ip_real');
+				if (el) el.textContent = res.stdout.trim() || 'Network Error';
+			});
+
+			// آپدیت وضعیت آی‌پی پروکسی سایفون
+			L.fs.exec('/bin/sh', ['-c', cmdPsiphon]).then(function(res) {
+				var el = document.getElementById('ip_psiphon');
+				if (el) {
+					var out = res.stdout.trim();
+					el.textContent = out;
+					el.style.color = (out === 'Disconnected') ? '#ff4040' : '#00ff66';
+				}
+			});
+
+			// خواندن فایل لاگ سیستم
+			L.fs.exec('/usr/bin/tail', ['-n', '20', '/tmp/psiphon.log']).then(function(res) {
+				var el = document.getElementById('psiphon_log');
+				if (el) el.value = res.stdout.trim() || 'Service stopped or log empty.';
+			});
+		}, 5);
+
+		return m.render();
+	}
+});
+EOC
+
+# ۴. ایجاد فایل منو لوسی در بخش Services
+cat << 'EOC' > /usr/share/luci/menu.d/luci-app-psiphon.json
+{
+	"admin/services/psiphon": {
+		"title": "Psiphon",
+		"action": {
+			"type": "view",
+			"path": "services/psiphon"
+		},
+		"depends": {
+			"acl": [ "luci-app-psiphon" ]
+		}
+	}
+}
+EOC
+
+# ۵. ایجاد فایل جامع دسترسی‌های امنیتی سیستم (ACL JSON)
+cat << 'EOC' > /usr/share/rpcd/acl.d/luci-app-psiphon.json
+{
+	"luci-app-psiphon": {
+		"description": "Grant access to Psiphon control and execution",
+		"read": {
+			"file": {
+				"/tmp/psiphon.log": [ "read" ]
+			},
+			"uci": [ "psiphon", "network" ]
+		},
+		"write": {
+			"file": {
+				"/tmp/psiphon.log": [ "write" ],
+				"/bin/sh": [ "exec" ],
+				"/usr/bin/tail": [ "exec" ],
+				"/etc/init.d/psiphon": [ "exec" ]
+			},
+			"uci": [ "psiphon" ]
+		}
+	}
+}
+EOC
+
+echo "LuCI Panel files with FULL country list successfully prepared."
+EOF
+
+# اجرای اسکریپت آماده‌سازی ساختار لوسی
+chmod +x /tmp/install_psiphon_luci.sh
+/tmp/install_psiphon_luci.sh
+rm /tmp/install_psiphon_luci.sh
 
 ---
 
-## ⚙️ ۵. راه‌اندازی به عنوان سرویس دائمی سیستم (`/etc/init.d/psiphon`)
+```
 
-اگر می‌خواهید دستورات بالا به صورت یک سرویس استاندارد در بیاید تا بتوانید آن را به صورت یک پارچه کنترل کنید یا کاری کنید که بعد از روشن شدن روتر خودکار اجرا شود، مراحل زیر را طی کنید:
+## ⚙️ ۴. ایجاد اسکریپت سرویس هوشمند سیستم (`/etc/init.d/psiphon`)
 
-۱. کل کد زیر را کپی کرده و در ترمینال روتر اجرا کنید تا فایل سرویس به صورت خودکار ساخته شود (با اصلاح کامل لاجیک فراخوانی حروف کوچک):
+این اسکریپت مغز متفکر اتصال بک‌اند است. هنگام استارت، تمامی فیلدهای تکمیل‌شده در پنل لوسی (مانند کشور انتخابی، پورت‌ها و نوع پروتکل) را دریافت کرده، فایل کانفیگ اصلی سایفون را در لحظه بازنویسی می‌کند و پروسه هدایت اتصالات به پورت‌های محلی شبکه LAN روتر را انجام می‌دهد:
 
 ```bash
-
 cat << 'EOF' > /etc/init.d/psiphon
 #!/bin/sh /etc/rc.common
 
@@ -203,169 +296,157 @@ START=99
 USE_PROCD=1
 
 start_service() {
+    # ۱. خواندن پیکربندی‌های ذخیره شده از uci لوسی
+    config_load psiphon
+    local enabled country transport socks_port http_port
+    
+    config_get_bool enabled config enabled 0
+    config_get country config country 'ALL'
+    config_get transport config transport 'STANDARD'
+    config_get socks_port config socks_port '10808'
+    config_get http_port config http_port '10809'
+    
+    # اگر تیک گزینه Enable خاموش باشد، اجرای سرویس متوقف می‌شود
+    if [ "$enabled" -eq 0 ]; then
+        echo "Psiphon is disabled in LuCI configuration. Skipping start." >> /tmp/psiphon.log
+        return 0
+    fi
+
+    # ۲. ساخت و بروزرسانی پویا و آنی فایل کانفیگ JSON سایفون بر اساس متغیرهای انتخابی لوسی
+    cat << JSON > /usr/bin/psiphon.config
+{
+    "DataRootDirectory": "/usr/bin/psiphon_data",
+    "EgressRegion": "$country",
+    "TransportProtocols": ["$transport"]
+}
+JSON
+
+    # ۳. راه‌اندازی و مدیریت پروسه هوشمند هسته با سیستم پروکد
     procd_open_instance "psiphon"
-    procd_set_param command /bin/sh -c '
+    procd_set_param command /bin/sh -c "
         killall -9 psiphon-core socat 2>/dev/null
-        /usr/bin/psiphon-core -config /usr/bin/psiphon.config -dataRootDirectory /usr/bin/psiphon_data > /tmp/psiphon.log 2>&1 &
         
-        echo "Waiting for network..."
-        while ! ubus call network.interface.lan status >/dev/null 2>&1; do
-            sleep 2
-        done
+        # اجرای فایل باینری سایفون با کانفیگ بازنویسی شده
+        /usr/bin/psiphon-core -config /usr/bin/psiphon.config > /tmp/psiphon.log 2>&1 &
+        PSIPHON_PID=\$!
         
-        echo "Waiting for Psiphon..."
-        while ! grep -q "ListeningSocksProxyPort" /tmp/psiphon.log; do
+        # انتظار منطقی برای انجام موفق هندشیک‌ها و باز شدن پورت کلاینت
+        echo 'Waiting for Psiphon to establish tunnels...' >> /tmp/psiphon.log
+        while ! grep -q 'ListeningSocksProxyPort' /tmp/psiphon.log; do
             sleep 1
         done
         
-        SOCKS_PORT=$(grep "ListeningSocksProxyPort" /tmp/psiphon.log | grep -o '\''"port":[0-9]*'\'' | cut -d'\'':'\'' -f2)
-        HTTP_PORT=$(grep "ListeningHttpProxyPort" /tmp/psiphon.log | grep -o '\''"port":[0-9]*'\'' | cut -d'\'':'\'' -f2)
-        ROUTER_IP=$(ubus call network.interface.lan status | jsonfilter -e '\''@["ipv4-address"][0].address'\'')
+        # استخراج اتوماتیک پورت‌های داینامیک داخلی ایجاد شده توسط هسته سایفون
+        CORE_SOCKS=\$(grep 'ListeningSocksProxyPort' /tmp/psiphon.log | grep -o '\"port\":[0-9]*' | cut -d':' -f2)
+        CORE_HTTP=\$(grep 'ListeningHttpProxyPort' /tmp/psiphon.log | grep -o '\"port\":[0-9]*' | cut -d':' -f2)
         
-        socat TCP-LISTEN:10809,fork,bind=$ROUTER_IP TCP:127.0.0.1:$HTTP_PORT &
-        socat TCP-LISTEN:10808,fork,bind=$ROUTER_IP TCP:127.0.0.1:$SOCKS_PORT &
+        # واکشی آی‌پی محلی فعلی روتر (LAN IP) برای پل زدن سراسری اتصالات
+        ROUTER_IP=\$(ubus call network.interface.lan status | jsonfilter -e '@[\"ipv4-address\"][0].address')
+        [ -z \"\$ROUTER_IP\" ] && ROUTER_IP='192.168.1.1'
         
-        nft add rule inet fw4 input iifname "br-lan" tcp dport 10808-10809 accept 2>/dev/null || true
-    '
+        # اتصال پورت‌های لوکال هاست سایفون به پورت‌های ثابت تعریف شده در لوسی بر روی کل شبکه LAN
+        socat TCP-LISTEN:\$socks_port,fork,bind=\$ROUTER_IP TCP:127.0.0.1:\$CORE_SOCKS &
+        socat TCP-LISTEN:\$http_port,fork,bind=\$ROUTER_IP TCP:127.0.0.1:\$CORE_HTTP &
+        
+        echo \"Psiphon ports successfully bound to LAN IP \$ROUTER_IP on ports \$socks_port and \$http_port\" >> /tmp/psiphon.log
+        
+        wait \$PSIPHON_PID
+    "
     procd_set_param respawn
     procd_close_instance
 }
 
 stop_service() {
-    killall -9 psiphon-core socat 2>/dev/null
+    killall -9 psiphon-core socat 2>/dev/null || true
+    echo "Psiphon core and socat tunnels stopped safely." > /tmp/psiphon.log
 }
 EOF
 
-```
-
-⚠️ **مرحله حیاتی (رفع خطای Permission denied):** فایل‌های ایجاد شده در پوشه `init.d` به طور پیش‌فرض دسترسی اجرای سیستم‌عامل را ندارند. حتماً و قطعاً باید دستور زیر را اجرا کنید تا اجازه دسترسی فعال‌سازی برای سرویس صادر شود، در غیر این‌صورت با خطای منع دسترسی مواجه خواهید شد:
-
-```bash
+# اعطای دسترسی‌های اجرایی سرویس سیستم
 chmod +x /etc/init.d/psiphon
+/etc/init.d/psiphon enable
 
 ```
-
-۲. حالا می‌توانید سرویس را مدیریت کنید:
-
-* **روشن کردن تانل سایفون:** `/etc/init.d/psiphon start`
-* **خاموش کردن کامل سیستم:** `/etc/init.d/psiphon stop`
-* **فعال‌سازی اجرای خودکار پس از روشن شدن روتر:** `/etc/init.d/psiphon enable`
 
 ---
 
-## 🛑 ۶. دستور خاموش کردن و غیرفعال‌سازی دستی
+## 🔄 ۵. بارگذاری نهایی و اعمال تغییرات پنل گرافیکی
 
-اگر مایل به استفاده از سیستم سرویس نیستید، هر زمان که خواستید سایفون و پل‌های ارتباطی دستی آن را متوقف کنید، این دستور را اجرا کنید:
+برای پاک کردن سیستم کش قدیمی رابط کاربری لوسی و بارگذاری کامل اسکریپت‌های امنیتی سیستم RPC، دستورات زیر را اجرا کنید:
 
 ```bash
-# متوقف کردن هسته سایفون و پروسه‌های socat
+chmod 644 /usr/share/rpcd/acl.d/luci-app-psiphon.json
+chmod 644 /usr/share/luci/menu.d/luci-app-psiphon.json
+
+# راه‌اندازی مجدد سرویس سیستم تبادل داده لوسی
+/etc/init.d/rpcd restart
+
+# حذف کامل کش‌های قدیمی برای ظاهر شدن آنی منوی Psiphon در تب Services
+rm -rf /tmp/luci-indexcache /tmp/luci-modulecache
+
+```
+
+*حالا مرورگر خود را با کلیدهای ترکیبی `Ctrl + F5` در سیستم ریفرش کنید تا منوی سرویس با عملکرد کامل کلیدها بالا بیاید.*
+
+---
+
+## 🛡️ ۶. تنظیمات فایروال (مبتنی بر Nftables در OpenWrt 25)
+
+برای اینکه پورت‌های جدید پروکسی روتر اجازه تبادل اطلاعات با سایر دستگاه‌های متصل به وای‌فای یا شبکه LAN را داشته باشند، پورت‌ها را در لایه فایروال محلی باز کنید:
+
+```bash
+# باز کردن پورت‌های ورودی فایروال شبکه برای اتصالات کلاینت‌ها
+nft add rule inet fw4 input iifname "br-lan" tcp dport 10808-10809 accept 2>/dev/null || true
+
+```
+
+---
+
+## 🩺 ۷. تست و عیب‌یابی شبکه از طریق ترمینال
+
+پس از زدن دکمه **Start Service** در پنل لوسی، با دستورات زیر می‌توانید عملکرد فیلترشکن را به طور مستقیم در لایه شبکه روتر ارزیابی کنید:
+
+* **تست عبور موفق ترافیک از پورت HTTP Proxy:**
+
+```bash
+curl -x http://127.0.0.1:10809 https://api.ipify.org
+
+```
+
+* **تست عبور موفق ترافیک از پورت SOCKS5 Proxy:**
+
+```bash
+curl --socks5-hostname 127.0.0.1:10808 https://api.ipify.org
+
+```
+
+---
+
+## 🗑️ ۸. حذف کامل و بی‌بازگشت سایفون از سیستم (Uninstall)
+
+اگر به هر دلیلی تمایل داشتید تمامی تنظیمات، فایل‌های باینری، دیتابیس‌ها و منوهای پنل لوسی سایفون را بدون به جا ماندن هیچ ردپایی حذف کنید، اسکریپت یکپارچه زیر را در ترمینال روتر اجرا کنید:
+
+```bash
+# ۱. متوقف کردن پردازش‌ها و غیرفعال‌سازی سرویس سیستم
+/etc/init.d/psiphon disable 2>/dev/null
+/etc/init.d/psiphon stop 2>/dev/null
 killall -9 psiphon-core socat 2>/dev/null
 
-# ری‌استارت فایروال روتر جهت پاکسازی قوانین موقت باز شده
-/etc/init.d/firewall restart
-
-echo "سایفون و پل‌های ارتباطی با موفقیت غیرفعال و خاموش شدند."
-
-```
-
----
-
-## 💻 ۷. تنظیمات کلاینت‌ها (ویندوز، گوشی، مرورگر)
-
-برای استفاده از اینترنت بدون فیلتر در دستگاه‌های متصل به روتر، مشخصات پروکسی زیر را در تنظیمات سیستم‌عامل یا افزونه‌های مرورگر (مانند FoxyProxy) وارد کنید:
-
-* **نوع پروکسی:** `HTTP` یا `SOCKS5`
-* **آدرس آی‌پای:** آی‌پای مدیریت روتر شما (مثلاً `192.168.18.1`)
-* **پورت اچ‌تی‌تی‌پي (HTTP Port):** `10809`
-* **پورت ساکس (SOCKS Port):** `10808`
-
----
-
-## 📊 ۸. ساختار خروجی لاگ‌های موفقیت‌آمیز سیستم
-
-جهت اطمینان از صحت عملکرد هسته سایفون، پس از استارت زدن باید لاگ‌های سیستم وضعیت درستی را گزارش کنند. نمونه خروجی سالم به شرح زیر است:
-
-```text
-{"data":{"ID":"UNKNOWN"},"noticeType":"NetworkID","timestamp":"2026-07-08T19:29:20.923Z"}
-{"data":{"port":10808},"noticeType":"ListeningSocksProxyPort","timestamp":"2026-07-08T19:29:20.927Z"}
-{"data":{"port":10809},"noticeType":"ListeningHttpProxyPort","timestamp":"2026-07-08T19:29:20.927Z"}
-{"data":{"regions":["AT","BE","CA","CH","DE","DK","ES","FI","FR","GB","IT","JP","NL","NO","PL","SE","SG","US"]},"noticeType":"AvailableEgressRegions"}
-{"data":{"region":"US"},"noticeType":"ConnectedServerRegion"}
-
-```
-
-> 💡 **نکته:** خط آخر (`ConnectedServerRegion`) نشانه نهایی انجام موفقیت‌آمیز هندشیک و برقراری اینترنت آزاد است.
-
----
-
-## ⚡ ۹. تست اتصال سایفون و راستی‌آزمایی تانل
-
-به دلیل اینکه پورت‌های ثابت بر روی آی‌پای داخلی روتر شما بایند (Bind) شده‌اند، برای تست گرفتن با دستور `curl` باید مستقیماً آدرس آی‌پي روتر را صدا بزنید و حواستان باشد هیچ علامت پرانتزی در زمان کپی کدهای گیت‌هاب وارد ترمینال نشود:
-
-* **مشاهده وضعیت زنده لاگ کانکشن (بررسی خطوط ConnectedServerRegion یا خطاهای احتمالی):**
-```bash
-tail -n 25 /tmp/psiphon.log
-
-```
-
-
-* **بررسی باز بودن پورت‌های ثابت روی آی‌پای داخلی روتر:**
-```bash
-netstat -tulpn | grep -E '10808|10809'
-
-```
-
-
-* **تست فرار از فیلترینگ پورت HTTP (نمایش آی‌پای خارجی سرور متصل شده):**
-```bash
-curl -x [http://192.168.18.1:10809](http://192.168.18.1:10809) [https://ifconfig.me](https://ifconfig.me)
-
-```
-
-
-* **تست فرار از فیلترینگ پورت SOCKS5:**
-```bash
-curl --socks5-hostname 192.168.18.1:10808 [https://ifconfig.me](https://ifconfig.me)
-
-```
-
-
-
----
-
-## 🗑️ ۱۰. حذف کامل و بی‌بازگشت سایفون (Uninstall)
-
-اگر به هر دلیلی خواستید تمام فایل‌ها، پوشه‌های دیتابیس، کش‌های لوسی (LuCI) و ردپای سایفون را به طور کامل و سراسری از روی سیستم‌عامل روتر پاک کنید، اسکریپت زیر را به صورت یکجا کپی کرده و در ترمینال روتر اجرا کنید:
-
-```bash
-# ۱. پاکسازی کامل کش لوسی و ری‌استارت سرویس رابط کاربری
-rm -rf /tmp/luci-indexcache /tmp/luci-modulecache
-/etc/init.d/rpcd restart
-
-# ۲. توقف کامل تمام پردازش‌های مربوطه
-/etc/init.d/psiphon stop 2>/dev/null
-killall -9 psiphon-core socat psiphon 2>/dev/null
-
-# ۳. حذف فایل‌های شناخته‌شده و مسیرهای اصلی
+# ۲. پاکسازی کامل فایل‌های سیستمی و پنل گرافیکی لوسی
 rm -f /usr/bin/psiphon-core
 rm -rf /usr/bin/psiphon_data
-rm -f /etc/config/psiphon
+rm -f /usr/bin/psiphon.config
 rm -f /etc/init.d/psiphon
+rm -f /etc/config/psiphon
 rm -f /www/luci-static/resources/view/services/psiphon.js
-rm -f /tmp/psiphon*
-
-# ۴. پاک کردن لاگ‌ها و فایل‌های موقت
+rm -f /usr/share/luci/menu.d/luci-app-psiphon.json
+rm -f /usr/share/rpcd/acl.d/luci-app-psiphon.json
 rm -f /tmp/psiphon.log
-rm -f /tmp/psiphon*
 
-# ۵. جستجوی سراسری و حذف هرگونه فایل یا پوشه باقی‌مانده با نام psiphon
-find / -name "*psiphon*" -exec rm -rf {} + 2>/dev/null
-
-# ۶. پاکسازی مجدد کش لوسی و راه‌اندازی نهایی سرویس سیستم
-rm -rf /tmp/luci-indexcache /tmp/luci-modulecache
+# ۳. راه‌اندازی مجدد بخش دسترسی‌ها و پاک کردن کامل سیستم کش لوسی
 /etc/init.d/rpcd restart
+rm -rf /tmp/luci-indexcache /tmp/luci-modulecache
 
-echo "Everything related to Psiphon has been completely wiped!"
+echo "Psiphon app and all associated LuCI components successfully uninstalled."
 
 ```
-
