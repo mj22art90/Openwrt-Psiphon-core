@@ -158,7 +158,7 @@ sed -i "s/\"egressRegion\": \".*\"/\"egressRegion\": \"$TARGET_REGION\"/g" /usr/
 
 # ۱. بستن پروسه‌های قدیمی جهت رفع انسداد و جلوگیری از تداخل پورت‌ها
 killall -9 psiphon-core socat 2>/dev/null
-rm -rf /usr/bin/psiphon_data/*
+#rm -rf /usr/bin/psiphon_data/*
 
 # ۲. اجرای آنی هسته اصلی سایفون در پس‌زمینه (با پورت‌های ثابت داخلی ۱۰۸۸۸ و ۱۰۸۸۹)
 /usr/bin/psiphon-core -config /usr/bin/psiphon.config -dataRootDirectory /usr/bin/psiphon_data > /tmp/psiphon.log 2>&1 &
