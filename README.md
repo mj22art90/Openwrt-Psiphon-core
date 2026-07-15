@@ -496,6 +496,7 @@ echo "Psiphon panel updated successfully! Please hard refresh your browser (Ctrl
 این اسکریپت مغز متفکر اتصال بک‌اند است. هنگام استارت، تمامی فیلدهای تکمیل‌شده در پنل لوسی (مانند کشور انتخابی، پورت‌ها و نوع پروتکل) را دریافت کرده، فایل کانفیگ اصلی سایفون را در لحظه بازنویسی می‌کند و پروسه هدایت اتصالات به پورت‌های محلی شبکه LAN روتر را انجام می‌دهد:
 
 ```bash
+
 cat << 'EOF' > /etc/init.d/psiphon
 #!/bin/sh /etc/rc.common
 
@@ -515,15 +516,15 @@ start_service() {
     
     # اگر تیک گزینه Enable خاموش باشد، اجرای سرویس متوقف می‌شود
     if [ "$enabled" -eq 0 ]; then
-        echo "Psiphon is disabled in LuCI configuration. Skipping start." >> /tmp/psiphon.log
+        echo "Psiphon is disabled in LuCI configuration. Skipping start." > /tmp/psiphon.log
         return 0
     fi
 
     # ۲. ساخت و بروزرسانی پویا و آنی فایل کانفیگ JSON سایفون بر اساس متغیرهای انتخابی لوسی
     cat << JSON > /usr/bin/psiphon.config
 {
-    "SocksProxyPort": $socks_port,
-    "HttpProxyPort": $http_port,
+    "SocksProxyPort": 1080,
+    "HttpProxyPort": 1081,
     "DataRootDirectory": "/usr/bin/psiphon_data",
     "EgressRegion": "$country",
     "TransportProtocols": ["$transport"],
@@ -539,29 +540,41 @@ JSON
     procd_set_param command /bin/sh -c "
         killall -9 psiphon-core socat 2>/dev/null
         
-        # اجرای فایل باینری سایفون با کانفیگ بازنویسی شده
-        /usr/bin/psiphon-core -config /usr/bin/psiphon.config > /tmp/psiphon.log 2>&1 &
+        # ایجاد لاگ تمیز و اجرای هسته اصلی سایفون
+        echo '' > /tmp/psiphon.log
+        /usr/bin/psiphon-core -config /usr/bin/psiphon.config >> /tmp/psiphon.log 2>&1 &
         PSIPHON_PID=\$!
         
-        # انتظار منطقی برای انجام موفق هندشیک‌ها و باز شدن پورت کلاینت
+        # انتظار منطقی و هوشمند برای بالا آمدن پورت‌ها و نوشتن لاگ
         echo 'Waiting for Psiphon to establish tunnels...' >> /tmp/psiphon.log
-        while ! grep -q 'ListeningSocksProxyPort' /tmp/psiphon.log; do
-            sleep 1
-        done
         
-        # استخراج اتوماتیک پورت‌های داینامیک داخلی ایجاد شده توسط هسته سایفون
-        CORE_SOCKS=\$(grep 'ListeningSocksProxyPort' /tmp/psiphon.log | grep -o '\"port\":[0-9]*' | cut -d':' -f2)
-        CORE_HTTP=\$(grep 'ListeningHttpProxyPort' /tmp/psiphon.log | grep -o '\"port\":[0-9]*' | cut -d':' -f2)
+        local timeout=15
+        local CORE_SOCKS=''
+        local CORE_HTTP=''
+        
+        while [ \$timeout -gt 0 ]; do
+            sleep 1
+            CORE_SOCKS=\$(grep 'ListeningSocksProxyPort' /tmp/psiphon.log | grep -o '\"port\":[0-9]*' | cut -d':' -f2 | head -n 1)
+            CORE_HTTP=\$(grep 'ListeningHttpProxyPort' /tmp/psiphon.log | grep -o '\"port\":[0-9]*' | cut -d':' -f2 | head -n 1)
+            
+            if [ ! -z \"\$CORE_SOCKS\" ] && [ ! -z \"\$CORE_HTTP\" ]; then
+                break
+            fi
+            timeout=\$((timeout - 1))
+        done
         
         # واکشی آی‌پی محلی فعلی روتر (LAN IP) برای پل زدن سراسری اتصالات
         ROUTER_IP=\$(ubus call network.interface.lan status | jsonfilter -e '@[\"ipv4-address\"][0].address')
-        [ -z \"\$ROUTER_IP\" ] && ROUTER_IP='192.168.1.1'
+        [ -z \"\$ROUTER_IP\" ] && ROUTER_IP='192.168.18.1'
         
         # اتصال پورت‌های لوکال هاست سایفون به پورت‌های ثابت تعریف شده در لوسی بر روی کل شبکه LAN
-        socat TCP-LISTEN:\$socks_port,fork,bind=\$ROUTER_IP TCP:127.0.0.1:\$CORE_SOCKS &
-        socat TCP-LISTEN:\$http_port,fork,bind=\$ROUTER_IP TCP:127.0.0.1:\$CORE_HTTP &
-        
-        echo \"Psiphon ports successfully bound to LAN IP \$ROUTER_IP on ports \$socks_port and \$http_port\" >> /tmp/psiphon.log
+        if [ ! -z \"\$CORE_SOCKS\" ] && [ ! -z \"\$CORE_HTTP\" ]; then
+            socat TCP-LISTEN:$socks_port,fork,bind=\$ROUTER_IP TCP:127.0.0.1:\$CORE_SOCKS &
+            socat TCP-LISTEN:$http_port,fork,bind=\$ROUTER_IP TCP:127.0.0.1:\$CORE_HTTP &
+            echo \"Successfully bridged LAN $socks_port->Core \$CORE_SOCKS and LAN $http_port->Core \$CORE_HTTP on IP \$ROUTER_IP\" >> /tmp/psiphon.log
+        else
+            echo 'Failed to detect Psiphon dynamic ports!' >> /tmp/psiphon.log
+        fi
         
         wait \$PSIPHON_PID
     "
