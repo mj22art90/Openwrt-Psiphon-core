@@ -29,6 +29,7 @@ $env:GOARCH="arm"
 $env:GOARM="7"
 go build -ldflags="-s -w" -o psiphon-core main.go
 
+
 ```
 
 *پس از اتمام کامپایل، فایل خروجی `psiphon-core` را از طریق ابزارهایی مانند MobaXterm یا SCP به مسیر `/usr/bin/` روی روتر منتقل کنید.*
@@ -47,6 +48,7 @@ mkdir -p /usr/bin/psiphon_data
 # نصب پیش‌نیازهای شبکه و ابزار مانیتورینگ آی‌پی (مخصوص OpenWrt 25)
 apk -U add socat curl wget-ssl coreutils-nohup
 
+
 ```
 
 ---
@@ -54,7 +56,6 @@ apk -U add socat curl wget-ssl coreutils-nohup
 ## 📁 ۳. استقرار زیرساخت و کدهای کامل پنل گرافیکی LuCI
 
 بلوک کد زیر یک اسکریپت همه‌کاره است. آن را به طور کامل کپی کرده و در ترمینال روتر پیست کنید. این اسکریپت تمام فایل‌های ساختاری لوسی، تنظیمات UCI، کدهای جاوااسکریپت داشبورد (همراه با دکمه‌ها و فیلدهای کامل) و مجوزهای امنیتی ACL را به صورت یکجا ایجاد می‌کند:
-
 
 ```bash
 cat << 'EOF' > /tmp/install_psiphon_luci.sh
@@ -79,12 +80,12 @@ EOC
 # ۳. ساخت فایل جاوااسکریپت اصلی پنل لوسی (کد کامل داشبورد گرافیکی)
 cat << 'EOC' > /www/luci-static/resources/view/services/psiphon.js
 'use strict';
-'required view';
-'required form';
-'required fs';
-'required ui';
-'required uci';
-'required poll';
+'require view';
+'require form';
+'require fs';
+'require ui';
+'require uci';
+'require poll';
 
 return L.view.extend({
 	router_ip: '192.168.1.1',
@@ -194,8 +195,8 @@ return L.view.extend({
 		// مکانیزم پولینگ (اطلاعات زنده) برای خواندن وضعیت آی‌پی و لاگ‌ها
 		L.poll.add(function() {
 			var sPort = L.uci.get('psiphon', 'config', 'socks_port') || '10808';
-			var cmdReal = 'curl -sL -m 5 [https://api.ipify.org](https://api.ipify.org) || wget -qO- --timeout=5 [https://api.ipify.org](https://api.ipify.org) || echo "Network Error"';
-			var cmdPsiphon = 'curl -sL -m 5 --socks5-hostname 127.0.0.1:' + sPort + ' [https://api.ipify.org](https://api.ipify.org) || echo "Disconnected"';
+			var cmdReal = 'curl -sL -m 5 https://api.ipify.org || wget -qO- --timeout=5 https://api.ipify.org || echo "Network Error"';
+			var cmdPsiphon = 'curl -sL -m 5 --socks5-hostname 127.0.0.1:' + sPort + ' https://api.ipify.org || echo "Disconnected"';
 
 			// آپدیت وضعیت آی‌پی واقعی شبکه
 			L.fs.exec('/bin/sh', ['-c', cmdReal]).then(function(res) {
@@ -225,11 +226,17 @@ return L.view.extend({
 });
 EOC
 
-# ۴. ایجاد فایل منو لوسی در بخش Services
+# ۴. ایجاد فایل منو لوسی در بخش Services (با تعریف منوی مادر برای جلوگیری از مخفی شدن)
 cat << 'EOC' > /usr/share/luci/menu.d/luci-app-psiphon.json
 {
+	"admin/services": {
+		"title": "Services",
+		"order": 40,
+		"index": true
+	},
 	"admin/services/psiphon": {
-		"title": "Psiphon",
+		"title": "Psiphon VPN",
+		"order": 1,
 		"action": {
 			"type": "view",
 			"path": "services/psiphon"
@@ -272,6 +279,7 @@ EOF
 chmod +x /tmp/install_psiphon_luci.sh
 /tmp/install_psiphon_luci.sh
 rm /tmp/install_psiphon_luci.sh
+
 
 ```
 
@@ -357,6 +365,7 @@ EOF
 chmod +x /etc/init.d/psiphon
 /etc/init.d/psiphon enable
 
+
 ```
 
 ---
@@ -369,15 +378,19 @@ chmod +x /etc/init.d/psiphon
 chmod 644 /usr/share/rpcd/acl.d/luci-app-psiphon.json
 chmod 644 /usr/share/luci/menu.d/luci-app-psiphon.json
 
-# راه‌اندازی مجدد سرویس سیستم تبادل داده لوسی
+# راه‌اندازی مجدد سرویس سیستم تبادل داده و وب‌سرور لوسی
 /etc/init.d/rpcd restart
+/etc/init.d/uhttpd restart
 
-# حذف کامل کش‌های قدیمی برای ظاهر شدن آنی منوی Psiphon در تب Services
-rm -rf /tmp/luci-indexcache /tmp/luci-modulecache
+# حذف عمیق کش‌های قدیمی و نشست‌ها برای ظاهر شدن آنی منوی Psiphon در تب Services
+rm -f /tmp/luci-indexcache*
+rm -rf /tmp/luci-modulecache/*
+rm -rf /tmp/luci-sessions/*
+
 
 ```
 
-*حالا مرورگر خود را با کلیدهای ترکیبی `Ctrl + F5` در سیستم ریفرش کنید تا منوی سرویس با عملکرد کامل کلیدها بالا بیاید.*
+*حالا مرورگر خود را با کلیدهای ترکیبی `Ctrl + F5` در سیستم ریفرش کنید تا منوی سرویس با عملکرد کامل کلیدها بالا بیاید. (توصیه می‌شود یک بار از پنل Log Out کرده و مجدد وارد شوید).*
 
 ---
 
@@ -388,6 +401,7 @@ rm -rf /tmp/luci-indexcache /tmp/luci-modulecache
 ```bash
 # باز کردن پورت‌های ورودی فایروال شبکه برای اتصالات کلاینت‌ها
 nft add rule inet fw4 input iifname "br-lan" tcp dport 10808-10809 accept 2>/dev/null || true
+
 
 ```
 
@@ -402,6 +416,7 @@ nft add rule inet fw4 input iifname "br-lan" tcp dport 10808-10809 accept 2>/dev
 ```bash
 curl -x http://127.0.0.1:10809 https://api.ipify.org
 
+
 ```
 
 * **تست عبور موفق ترافیک از پورت SOCKS5 Proxy:**
@@ -409,29 +424,30 @@ curl -x http://127.0.0.1:10809 https://api.ipify.org
 ```bash
 curl --socks5-hostname 127.0.0.1:10808 https://api.ipify.org
 
+
 ```
 
 ---
 
-
-
-*تست اجرای و متوقف کردن با دستور **
+*تست اجرای و متوقف کردن با دستور*
 
 * **روشن کردن تانل سایفون:**
-```bash
 
+```bash
 /etc/init.d/psiphon start
 
 ```
-* **خاموش کردن کامل سیستم:**
-```bash
 
+* **خاموش کردن کامل سیستم:**
+
+```bash
 /etc/init.d/psiphon stop
 
 ```
-* **فعال‌سازی اجرای خودکار پس از روشن شدن روتر:**
-```bash
 
+* **فعال‌سازی اجرای خودکار پس از روشن شدن روتر:**
+
+```bash
 /etc/init.d/psiphon enable
 
 ```
@@ -459,8 +475,12 @@ rm -f /tmp/psiphon.log
 
 # ۳. راه‌اندازی مجدد بخش دسترسی‌ها و پاک کردن کامل سیستم کش لوسی
 /etc/init.d/rpcd restart
-rm -rf /tmp/luci-indexcache /tmp/luci-modulecache
+/etc/init.d/uhttpd restart
+rm -f /tmp/luci-indexcache*
+rm -rf /tmp/luci-modulecache/*
+rm -rf /tmp/luci-sessions/*
 
 echo "Psiphon app and all associated LuCI components successfully uninstalled."
+
 
 ```
