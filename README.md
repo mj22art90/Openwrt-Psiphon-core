@@ -590,11 +590,6 @@ chmod 644 /usr/share/luci/menu.d/luci-app-psiphon.json
 /etc/init.d/rpcd restart
 /etc/init.d/uhttpd restart
 
-# حذف عمیق کش‌های قدیمی و نشست‌ها برای ظاهر شدن آنی منوی Psiphon در تب Services
-rm -f /tmp/luci-indexcache*
-rm -rf /tmp/luci-modulecache/*
-rm -rf /tmp/luci-sessions/*
-
 
 ```
 
