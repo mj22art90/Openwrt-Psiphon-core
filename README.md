@@ -604,6 +604,7 @@ chmod 644 /usr/share/luci/menu.d/luci-app-psiphon.json
 ```bash
 # باز کردن پورت‌های ورودی فایروال شبکه برای اتصالات کلاینت‌ها
 nft add rule inet fw4 input iifname "br-lan" tcp dport 10808-10809 accept 2>/dev/null || true
+/etc/init.d/firewall reload
 
 
 ```
