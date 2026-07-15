@@ -63,23 +63,7 @@ apk -U add socat curl wget-ssl coreutils-nohup
 ```bash
 
 
-# ۱. ساخت پوشههای مورد نیاز سیستم در صورت عدم وجود
-mkdir -p /www/luci-static/resources/view/services
-mkdir -p /usr/share/luci/menu.d
-mkdir -p /usr/share/rpcd/acl.d
-mkdir -p /etc/config
 
-# ۲. ایجاد فایل تنظیمات پیشفرض سایفون
-cat << 'EOF' > /etc/config/psiphon
-config psiphon 'config'
-	option enabled '0'
-	option country ''
-	option transport 'STANDARD'
-	option socks_port '10808'
-	option http_port '10809'
-EOF
-
-# ۳. ساخت فایل جاوااسکریپت اصلی پنل لوسی (بدون دکمه پاک کردن کش)
 cat << 'EOF' > /www/luci-static/resources/view/services/psiphon.js
 'use strict';
 'require view';
@@ -91,7 +75,7 @@ cat << 'EOF' > /www/luci-static/resources/view/services/psiphon.js
 
 return L.view.extend({
 	// متغیر کمکی برای ذخیره آیپی روتر
-	router_ip: '192.168.8.1',
+	router_ip: '192.168.18.1',
 
 	load: function() {
 		// واکشی خودکار آیپی محلی (LAN) روتر از uci قبل از رندر صفحه
@@ -167,6 +151,7 @@ return L.view.extend({
 			if (elReal) elReal.textContent = '⏳ ' + _('Checking...');
 			if (elVpn) elVpn.textContent = '⏳ ' + _('Checking...');
 
+			// ۱. بررسی آی‌پی بدون پروکسی (Real IP)
 			const cmdReal = 'curl -sL -m 5 http://ip-api.com/json/ || wget -qO- --timeout=5 http://ip-api.com/json/ || true';
 			L.fs.exec('/bin/sh', ['-c', cmdReal]).then(function(res) {
 				try {
@@ -183,7 +168,10 @@ return L.view.extend({
 				if (elReal) elReal.textContent = '⚠️ ' + _('System Error');
 			});
 
-			const cmdVpn = 'export http_proxy="http://127.0.0.1:10809"; export all_proxy="socks5://127.0.0.1:10808"; curl -sL -m 6 http://ip-api.com/json/ || wget -qO- --timeout=6 http://ip-api.com/json/ || true';
+			// ۲. بررسی آی‌پی سایفون از روی پورت پچ‌شده و آی‌پی LAN روتر به صورت داینامیک
+			const current_lan_ip = self.router_ip || '192.168.18.1';
+			const cmdVpn = 'curl -sL -m 6 -x http://' + current_lan_ip + ':10809 http://ip-api.com/json/ || curl -sL -m 6 --socks5 ' + current_lan_ip + ':10808 http://ip-api.com/json/ || wget -qO- -e use_proxy=yes -e http_proxy=http://' + current_lan_ip + ':10809 --timeout=6 http://ip-api.com/json/ || true';
+			
 			L.fs.exec('/bin/sh', ['-c', cmdVpn]).then(function(res) {
 				try {
 					if (res.stdout && res.stdout.trim() !== '') {
@@ -301,7 +289,7 @@ return L.view.extend({
 		};
 
 		// ==========================================
-		// بخش ۴: مدیریت لاگها (دکمه کش حذف شد)
+		// بخش ۴: مدیریت لاگها
 		// ==========================================
 		o = s.option(L.form.Button, '_clear_log', _('Log Actions'));
 		o.inputtitle = _('Clear Log Screen');
@@ -313,55 +301,58 @@ return L.view.extend({
 		};
 
 		// ==========================================
-		// بخش ۵: نمایشگر لاگ و ترمینال
+		// بخش ۵: نمایشگر لاگ و ترمینال (هم‌تراز شده)
 		// ==========================================
 		o = s.option(L.form.DummyValue, '_console_and_log');
 		o.rawhtml = true;
 		o.render = function() {
-			return E('div', { 'class': 'cbi-value' }, [
-				E('label', { 'class': 'cbi-value-title' }, _('Logs')),
-				E('div', { 'class': 'cbi-value-field', 'style': 'width: 100%; box-sizing: border-box;' }, [
-					
-					// کادر لاگ
-					E('textarea', { 
-						'id': 'psiphon_live_log', 
-						'style': 'width: 100%; height: 260px; font-family: monospace; font-size: 12px; background: #111; color: #00ff66; padding: 10px; border-radius: 4px; border: 1px solid #222; resize: none; line-height: 1.6; box-sizing: border-box; margin-bottom: 15px;', 
-						'readonly': 'readonly' 
-					}, _('Waiting for log stream...')),
-				E('label', { 'class': 'cbi-value-title' }, _('Terminal')),
+			return E('div', {}, [
+				// ردیف اول: لاگ‌ها
+				E('div', { 'class': 'cbi-value' }, [
+					E('label', { 'class': 'cbi-value-title' }, _('Logs')),
+					E('div', { 'class': 'cbi-value-field', 'style': 'width: 100%; box-sizing: border-box;' }, [
+						E('textarea', { 
+							'id': 'psiphon_live_log', 
+							'style': 'width: 100%; height: 260px; font-family: monospace; font-size: 12px; background: #111; color: #00ff66; padding: 10px; border-radius: 4px; border: 1px solid #222; resize: none; line-height: 1.6; box-sizing: border-box; margin-bottom: 15px;', 
+							'readonly': 'readonly' 
+						}, _('Waiting for log stream...'))
+					])
+				]),
+				
+				// ردیف دوم: ترمینال (کاملاً هم‌تراز با استایل لوسی)
+				E('div', { 'class': 'cbi-value' }, [
+					E('label', { 'class': 'cbi-value-title' }, _('Terminal')),
+					E('div', { 'class': 'cbi-value-field', 'style': 'width: 100%; box-sizing: border-box;' }, [
+						E('textarea', { 
+							'id': 'cmd_input', 
+							'placeholder': 'Enter shell command here...\nExample: ps -w | grep psiphon', 
+							'style': 'width: 100%; height: 90px; padding: 10px; margin-bottom: 10px; background: #1a1c20; color: #fff; border: 1px solid #444; font-family: monospace; resize: none; box-sizing: border-box; border-radius: 4px;' 
+						}),
+						E('div', { 'style': 'text-align: right;' }, [
+							E('button', { 
+								'class': 'btn cbi-button cbi-button-apply',
+								'click': function(ev) {
+									ev.preventDefault();
+									const cmdInput = document.getElementById('cmd_input');
+									const cmd = cmdInput ? cmdInput.value.trim() : '';
+									if (!cmd) return;
 
-					// کادر ترمینال
-					E('textarea', { 
-						'id': 'cmd_input', 
-						'placeholder': 'Enter shell command here...\nExample: ps -w | grep psiphon', 
-						'style': 'width: 100%; height: 90px; padding: 10px; margin-bottom: 10px; background: #1a1c20; color: #fff; border: 1px solid #444; font-family: monospace; resize: none; box-sizing: border-box; border-radius: 4px;' 
-					}),
-					
-					// دکمه اجرا
-					E('div', { 'style': 'text-align: right;' }, [
-						E('button', { 
-							'class': 'btn cbi-button cbi-button-apply',
-							'click': function(ev) {
-								ev.preventDefault();
-								const cmdInput = document.getElementById('cmd_input');
-								const cmd = cmdInput ? cmdInput.value.trim() : '';
-								if (!cmd) return;
-
-								const logArea = document.getElementById('psiphon_live_log');
-								if (logArea) {
-									logArea.value += '\n$ ' + cmd + '\n';
-									logArea.scrollTop = logArea.scrollHeight;
-								}
-								
-								L.fs.exec('/bin/sh', ['-c', cmd]).then(function(res) {
+									const logArea = document.getElementById('psiphon_live_log');
 									if (logArea) {
-										logArea.value += (res.stdout || '') + (res.stderr || '');
+										logArea.value += '\n$ ' + cmd + '\n';
 										logArea.scrollTop = logArea.scrollHeight;
 									}
-									if (cmdInput) cmdInput.value = '';
-								});
-							}
-						}, _('▶ Run Command'))
+									
+									L.fs.exec('/bin/sh', ['-c', cmd]).then(function(res) {
+										if (logArea) {
+											logArea.value += (res.stdout || '') + (res.stderr || '');
+											logArea.scrollTop = logArea.scrollHeight;
+										}
+										if (cmdInput) cmdInput.value = '';
+									});
+								}
+							}, _('▶ Run Command'))
+						])
 					])
 				])
 			]);
@@ -412,7 +403,7 @@ return L.view.extend({
 			});
 		}
 
-		// راهاندازی تسکهای خودکار و زمانبندی زنده LuCI Poll API
+		// راه‌اندازی تسک‌های خودکار و زمانبندی زنده LuCI Poll API
 		L.Poll.add(function() {
 			return Promise.all([
 				fetchLog()
@@ -436,54 +427,9 @@ return L.view.extend({
 });
 EOF
 
-# ۴. ایجاد فایل منو (Menu JSON) - ثبت در بخش Services لوسی
-cat << 'EOF' > /usr/share/luci/menu.d/luci-app-psiphon.json
-{
-	"admin/services/psiphon": {
-		"title": "Psiphon",
-		"action": {
-			"type": "view",
-			"path": "services/psiphon"
-		},
-		"depends": {
-			"acl": [ "luci-app-psiphon" ]
-		}
-	}
-}
-EOF
-
-# ۵. ایجاد فایل دسترسی امنیتی سیستم (ACL JSON) - مجوز دسترسی به فرآیندها
-cat << 'EOF' > /usr/share/rpcd/acl.d/luci-app-psiphon.json
-{
-	"luci-app-psiphon": {
-		"description": "Grant access to Psiphon control and execution",
-		"read": {
-			"file": {
-				"/tmp/psiphon.log": [ "read" ]
-			},
-			"uci": [ "psiphon", "network" ]
-		},
-		"write": {
-			"file": {
-				"/tmp/psiphon.log": [ "write" ],
-				"/bin/sh": [ "exec" ],
-				"/etc/init.d/psiphon": [ "exec" ]
-			},
-			"uci": [ "psiphon" ]
-		}
-	}
-}
-EOF
-
-# ۶. تنظیم دقیق پرمیشنها و سطوح دسترسی تمامی فایلها
-chmod 644 /etc/config/psiphon
-chmod 644 /www/luci-static/resources/view/services/psiphon.js
-chmod 644 /usr/share/luci/menu.d/luci-app-psiphon.json
-chmod 644 /usr/share/rpcd/acl.d/luci-app-psiphon.json
-
-# ۷. راه اندازی مجدد RPC سیستم و پاکسازی تمام کشهای LuCI برای رندر مجدد
-/etc/init.d/rpcd restart
+# پاکسازی کامل کش وب و بازنشانی ایندکس لوسی
 rm -rf /tmp/luci-indexcache /tmp/luci-modulecache
+/etc/init.d/rpcd restart
 
 echo "Psiphon panel updated successfully! Please hard refresh your browser (Ctrl+F5)."
 
