@@ -58,27 +58,25 @@ apk -U add socat curl wget-ssl coreutils-nohup
 بلوک کد زیر یک اسکریپت همه‌کاره است. آن را به طور کامل کپی کرده و در ترمینال روتر پیست کنید. این اسکریپت تمام فایل‌های ساختاری لوسی، تنظیمات UCI، کدهای جاوااسکریپت داشبورد (همراه با دکمه‌ها و فیلدهای کامل) و مجوزهای امنیتی ACL را به صورت یکجا ایجاد می‌کند:
 
 ```bash
-cat << 'EOF' > /tmp/install_psiphon_luci.sh
-#!/bin/sh
 
-# ۱. ساخت پوشه‌های مورد نیاز سیستم
+# ۱. ساخت پوشه‌های مورد نیاز سیستم در صورت عدم وجود
 mkdir -p /www/luci-static/resources/view/services
 mkdir -p /usr/share/luci/menu.d
 mkdir -p /usr/share/rpcd/acl.d
 mkdir -p /etc/config
 
-# ۲. ایجاد فایل تنظیمات پیش‌فرض
-cat << 'EOC' > /etc/config/psiphon
+# ۲. ایجاد فایل تنظیمات پیش‌فرض سایفون
+cat << 'EOF' > /etc/config/psiphon
 config psiphon 'config'
 	option enabled '0'
 	option country ''
 	option transport 'STANDARD'
 	option socks_port '10808'
 	option http_port '10809'
-EOC
+EOF
 
-# ۳. ساخت فایل جاوااسکریپت اصلی پنل لوسی (کد کامل داشبورد گرافیکی)
-cat << 'EOC' > /www/luci-static/resources/view/services/psiphon.js
+# ۳. ساخت فایل جاوااسکریپت اصلی پنل لوسی (بدون دکمه پاک کردن کش)
+cat << 'EOF' > /www/luci-static/resources/view/services/psiphon.js
 'use strict';
 'require view';
 'require form';
@@ -88,32 +86,168 @@ cat << 'EOC' > /www/luci-static/resources/view/services/psiphon.js
 'require poll';
 
 return L.view.extend({
-	router_ip: '192.168.1.1',
+	// متغیر کمکی برای ذخیره آی‌پی روتر
+	router_ip: '192.168.8.1',
 
 	load: function() {
+		// واکشی خودکار آی‌پی محلی (LAN) روتر از uci قبل از رندر صفحه
 		return L.uci.load('network').then(L.bind(function() {
 			var ip = L.uci.get('network', 'lan', 'ipaddr');
 			if (ip) {
 				this.router_ip = ip;
 			}
-			return L.uci.load('psiphon');
 		}, this));
 	},
 
-	render: function(data) {
-		var m, s, o;
+	render: function() {
+		const self = this;
+		const m = new L.form.Map('psiphon', _('Psiphon VPN Configuration'), _('Unified Single-Page Control Panel for Psiphon Tunnel Core.'));
+		const s = m.section(L.form.NamedSection, 'config', 'psiphon', _('Service Status & Configuration'));
+		s.addremove = false;
+		
+		// ==========================================
+		// بخش ۱: داشبورد مانیتورینگ آی‌پی
+		// ==========================================
+		let o = s.option(L.form.DummyValue, '_ip_box');
+		o.rawhtml = true;
+		o.render = function() {
+			return E('div', { 'class': 'cbi-value', 'style': 'margin-bottom: 20px;' }, [
+				E('div', { 'style': 'display: flex; flex-flow: row wrap; align-items: center; justify-content: space-between; background: #1a1c20; padding: 12px 20px; border-radius: 8px; border: 1px solid #333; box-shadow: 0 4px 6px rgba(0,0,0,0.3); width: 100%; gap: 15px;' }, [
+					
+					// بخش آی‌پی اصلی
+					E('div', { 'style': 'display: flex; align-items: center; gap: 8px;' }, [
+						E('span', { 'style': 'color: #88a; font-size: 13px; text-transform: uppercase; font-weight: bold;' }, _('🔴 Real IP:')),
+						E('span', { 'id': 'real_ip_display', 'style': 'font-size: 14px; color: #ccc; font-family: monospace;' }, _('⏳ Checking...'))
+					]),
 
-		m = new L.form.Map('psiphon', _('Psiphon VPN Configuration'), 
-			_('Unified Single-Page Control Panel for Psiphon Tunnel Core.'));
+					// خط جداکننده وسط
+					E('div', { 'style': 'width: 1px; height: 24px; background-color: #444; display: inline-block;' }, ''),
 
-		s = m.section(L.form.NamedSection, 'config', 'psiphon', _('Service Status & Configuration'));
-		s.anonymous = true;
+					// بخش آی‌پی سایفون
+					E('div', { 'style': 'display: flex; align-items: center; gap: 8px; flex: 1;' }, [
+						E('span', { 'style': 'color: #88a; font-size: 13px; text-transform: uppercase; font-weight: bold;' }, _('🟢 Psiphon IP:')),
+						E('span', { 'id': 'vpn_ip_display', 'style': 'font-size: 14px; color: #00ff66; font-family: monospace;' }, _('⏳ Checking...'))
+					]),
 
-		// چک‌مارک فعال‌سازی
+					// دکمه رفرش
+					E('div', {}, [
+						E('button', {
+							'class': 'btn cbi-button cbi-button-apply',
+							'style': 'padding: 6px 15px; font-weight: bold; white-space: nowrap;',
+							'click': function(ev) {
+								ev.preventDefault();
+								refreshIPs();
+							}
+						}, _('🔄 Refresh'))
+					])
+				])
+			]);
+		};
+
+		function updateDisplayElement(el, data, fallbackText, successColor) {
+			if (!el) return;
+			if (data && data.status === 'success') {
+				const flagUrl = 'https://flagcdn.com/w20/' + data.countryCode.toLowerCase() + '.png';
+				el.innerHTML = '';
+				el.appendChild(E('img', { 'src': flagUrl, 'style': 'vertical-align: middle; margin-right: 8px; border-radius: 2px;', 'alt': data.countryCode }));
+				el.appendChild(E('b', { 'style': 'font-size: 15px; color: ' + (successColor || '#ccc') }, data.query));
+				el.appendChild(E('span', { 'style': 'color: #888; font-size: 12px; margin-left: 5px;' }, '(' + data.country + ')'));
+			} else {
+				el.textContent = fallbackText;
+			}
+		}
+
+		function refreshIPs() {
+			const elReal = document.getElementById('real_ip_display');
+			const elVpn = document.getElementById('vpn_ip_display');
+			if (elReal) elReal.textContent = '⏳ ' + _('Checking...');
+			if (elVpn) elVpn.textContent = '⏳ ' + _('Checking...');
+
+			const cmdReal = 'curl -sL -m 5 http://ip-api.com/json/ || wget -qO- --timeout=5 http://ip-api.com/json/ || true';
+			L.fs.exec('/bin/sh', ['-c', cmdReal]).then(function(res) {
+				try {
+					if (res.stdout && res.stdout.trim() !== '') {
+						const d = JSON.parse(res.stdout);
+						updateDisplayElement(elReal, d, '⚠️ ' + _('Failed'));
+					} else {
+						if (elReal) elReal.textContent = '⚠️ ' + _('Network Error');
+					}
+				} catch(e) { 
+					if (elReal) elReal.textContent = '⚠️ ' + _('Parse Error'); 
+				}
+			}).catch(function() {
+				if (elReal) elReal.textContent = '⚠️ ' + _('System Error');
+			});
+
+			const cmdVpn = 'export http_proxy="http://127.0.0.1:10809"; export all_proxy="socks5://127.0.0.1:10808"; curl -sL -m 6 http://ip-api.com/json/ || wget -qO- --timeout=6 http://ip-api.com/json/ || true';
+			L.fs.exec('/bin/sh', ['-c', cmdVpn]).then(function(res) {
+				try {
+					if (res.stdout && res.stdout.trim() !== '') {
+						const d = JSON.parse(res.stdout);
+						updateDisplayElement(elVpn, d, '🔴 ' + _('Disconnected'), '#00ff66');
+					} else {
+						if (elVpn) elVpn.textContent = '🔴 ' + _('Disconnected');
+					}
+				} catch(e) { 
+					if (elVpn) elVpn.textContent = '🔴 ' + _('Disconnected'); 
+				}
+			}).catch(function() {
+				if (elVpn) elVpn.textContent = '🔴 ' + _('Disconnected');
+			});
+		}
+		
+		// ==========================================
+		// بخش ۲: کنترل سرویس
+		// ==========================================
+		o = s.option(L.form.DummyValue, '_control_buttons');
+		o.rawhtml = true;
+		o.render = function() {
+			return E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, _('Service Control')),
+				E('div', { 'class': 'cbi-value-field' }, [
+					E('button', { 
+						'class': 'btn cbi-button cbi-button-remove', 
+						'style': 'margin-right: 10px;', 
+						'click': function(ev) { 
+							ev.preventDefault(); 
+							ui.showModal(_('Stopping service...'), [ E('p', { 'class': 'spinning' }, _('Please wait...')) ]);
+							L.fs.exec('/etc/init.d/psiphon', ['stop']).then(function() { 
+								L.fs.exec('/bin/sh', ['-c', 'killall -9 psiphon-core socat 2>/dev/null || true']).then(function() {
+									ui.hideModal();
+									ui.addNotification(null, E('p', _('Psiphon Service Stopped successfully.')), 'info');
+									refreshIPs();
+								});
+							}).catch(function(err) { 
+								ui.hideModal();
+								ui.addNotification(null, E('p', _('Stop Error: ') + err), 'danger');
+							}); 
+						}
+					}, _('Stop')),
+					E('button', { 
+						'class': 'btn cbi-button cbi-button-apply', 
+						'click': function(ev) { 
+							ev.preventDefault(); 
+							ui.showModal(_('Starting service...'), [ E('p', { 'class': 'spinning' }, _('Initializing Psiphon Core...')) ]);
+							L.fs.exec('/etc/init.d/psiphon', ['start']).then(function() { 
+								ui.hideModal();
+								ui.addNotification(null, E('p', _('Psiphon Service Started successfully.')), 'info');
+								setTimeout(refreshIPs, 3000);
+							}).catch(function(err) { 
+								ui.hideModal();
+								ui.addNotification(null, E('p', _('Start Error: ') + err), 'danger');
+							}); 
+						}
+					}, _('Start'))
+				])
+			]);
+		};
+
+		// ==========================================
+		// بخش ۳: تنظیمات عمومی و پورت‌ها
+		// ==========================================
 		o = s.option(L.form.Flag, 'enabled', _('Enable'));
 		o.rmempty = false;
 
-		// انتخاب کشور با منوی کشویی کامل
 		o = s.option(L.form.ListValue, 'country', _('Region'));
 		o.value('', _('Best Performance'));
 		o.value('AT', _('Austria'));
@@ -136,107 +270,172 @@ return L.view.extend({
 		o.value('US', _('United States'));
 		o.default = '';
 
-		// انتخاب نوع پروتکل ارتباطی (Transport Mode)
 		o = s.option(L.form.ListValue, 'transport', _('Transport Mode'));
 		o.value('STANDARD', _('Standard'));
 		o.value('QUIC', _('QUIC'));
 		o.value('SSH', _('SSH'));
 		o.default = 'STANDARD';
 
-		// پورت SOCKS5 داخلی
-		o = s.option(L.form.Value, 'socks_port', _('SOCKS Port'));
-		o.datatype = 'port';
-		o.default = '10808';
+		// پورت SOCKS با قابلیت تولید خودکار توضیحات بر اساس آی‌پی روتر
+		const socksOpt = s.option(L.form.Value, 'socks_port', _('SOCKS Port'));
+		socksOpt.datatype = 'port';
+		socksOpt.default = '10808';
+		socksOpt.description = _('Connect clients to: ') + '<b>' + self.router_ip + ':10808</b>';
+		socksOpt.write = function(section_id, value) {
+			this.description = _('Connect clients to: ') + '<b>' + self.router_ip + ':' + (value || '10808') + '</b>';
+			return L.form.Value.prototype.write.call(this, section_id, value);
+		};
 
-		// پورت HTTP داخلی
-		o = s.option(L.form.Value, 'http_port', _('HTTP Port'));
-		o.datatype = 'port';
-		o.default = '10809';
+		// پورت HTTP با قابلیت تولید خودکار توضیحات بر اساس آی‌پی روتر
+		const httpOpt = s.option(L.form.Value, 'http_port', _('HTTP Port'));
+		httpOpt.datatype = 'port';
+		httpOpt.default = '10809';
+		httpOpt.description = _('Connect clients to: ') + '<b>' + self.router_ip + ':10809</b>';
+		httpOpt.write = function(section_id, value) {
+			this.description = _('Connect clients to: ') + '<b>' + self.router_ip + ':' + (value || '10809') + '</b>';
+			return L.form.Value.prototype.write.call(this, section_id, value);
+		};
 
-		// بخش وضعیت آی‌پی و اتصالات
-		var statusSection = m.section(L.form.NamedSection, 'config', 'psiphon', _('Live Connection Status'));
-		statusSection.render = L.bind(function() {
-			return E('div', { 'class': 'cbi-section' }, [
-				E('div', { 'style': 'padding: 15px; background: #1a1c20; border: 1px solid #333; border-radius: 4px; color: #ccc;' }, [
-					E('p', { 'style': 'margin: 5px 0;' }, [E('strong', { 'style': 'color: #88a;' }, '🔴 Real IP: '), E('span', { 'id': 'ip_real' }, '⏳ Checking...')]),
-					E('p', { 'style': 'margin: 5px 0;' }, [E('strong', { 'style': 'color: #88a;' }, '🟢 Psiphon IP: '), E('span', { 'id': 'ip_psiphon' }, '⏳ Checking...')]),
-					E('hr', { 'style': 'border-color: #444; margin: 15px 0;' }),
-					E('div', { 'style': 'margin-top: 10px;' }, [
-						E('button', {
+		// ==========================================
+		// بخش ۴: مدیریت لاگ‌ها (دکمه کش حذف شد)
+		// ==========================================
+		o = s.option(L.form.Button, '_clear_log', _('Log Actions'));
+		o.inputtitle = _('Clear Log Screen');
+		o.inputstyle = 'reset';
+		o.onclick = function(ev) {
+			const box = document.getElementById('psiphon_live_log');
+			if (box) box.value = _('Log monitor cleared...');
+			return L.fs.exec('/bin/sh', ['-c', '> /tmp/psiphon.log || true']);
+		};
+
+		// ==========================================
+		// بخش ۵: نمایشگر لاگ و ترمینال
+		// ==========================================
+		o = s.option(L.form.DummyValue, '_console_and_log');
+		o.rawhtml = true;
+		o.render = function() {
+			return E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, _('Terminal / Logs')),
+				E('div', { 'class': 'cbi-value-field', 'style': 'width: 100%; box-sizing: border-box;' }, [
+					
+					// کادر لاگ
+					E('textarea', { 
+						'id': 'psiphon_live_log', 
+						'style': 'width: 100%; height: 260px; font-family: monospace; font-size: 12px; background: #111; color: #00ff66; padding: 10px; border-radius: 4px; border: 1px solid #222; resize: none; line-height: 1.6; box-sizing: border-box; margin-bottom: 15px;', 
+						'readonly': 'readonly' 
+					}, _('Waiting for log stream...')),
+
+					// کادر ترمینال
+					E('textarea', { 
+						'id': 'cmd_input', 
+						'placeholder': 'Enter shell command here...\nExample: ps -w | grep psiphon', 
+						'style': 'width: 100%; height: 90px; padding: 10px; margin-bottom: 10px; background: #1a1c20; color: #fff; border: 1px solid #444; font-family: monospace; resize: none; box-sizing: border-box; border-radius: 4px;' 
+					}),
+					
+					// دکمه اجرا
+					E('div', { 'style': 'text-align: right;' }, [
+						E('button', { 
 							'class': 'btn cbi-button cbi-button-apply',
 							'click': function(ev) {
 								ev.preventDefault();
-								L.fs.exec('/etc/init.d/psiphon', ['start']).then(function() {
-									ui.addNotification(null, E('p', _('Starting Psiphon service...')), 'info');
+								const cmdInput = document.getElementById('cmd_input');
+								const cmd = cmdInput ? cmdInput.value.trim() : '';
+								if (!cmd) return;
+
+								const logArea = document.getElementById('psiphon_live_log');
+								if (logArea) {
+									logArea.value += '\n$ ' + cmd + '\n';
+									logArea.scrollTop = logArea.scrollHeight;
+								}
+								
+								L.fs.exec('/bin/sh', ['-c', cmd]).then(function(res) {
+									if (logArea) {
+										logArea.value += (res.stdout || '') + (res.stderr || '');
+										logArea.scrollTop = logArea.scrollHeight;
+									}
+									if (cmdInput) cmdInput.value = '';
 								});
 							}
-						}, _('Start')),
-						' ',
-						E('button', {
-							'class': 'btn cbi-button cbi-button-remove',
-							'click': function(ev) {
-								ev.preventDefault();
-								L.fs.exec('/etc/init.d/psiphon', ['stop']).then(function() {
-									ui.addNotification(null, E('p', _('Stopping Psiphon service...')), 'info');
-								});
-							}
-						}, _('Stop'))
+						}, _('▶ Run Command'))
 					])
-				]),
-				E('h3', { 'style': 'margin-top: 20px;' }, _('Terminal / Logs')),
-				E('textarea', {
-					'id': 'psiphon_log',
-					'readonly': 'readonly',
-					'style': 'width: 100%; height: 260px; font-family: monospace; font-size: 12px; background: #111; color: #00ff66; padding: 10px; border-radius: 4px; border: 1px solid #222;'
-				}, 'Standby...')
+				])
 			]);
-		}, this);
+		};
 
-		// مکانیزم پولینگ (اطلاعات زنده) برای خواندن وضعیت آی‌پی و لاگ‌ها
-		L.poll.add(function() {
-			var sPort = L.uci.get('psiphon', 'config', 'socks_port') || '10808';
-			var cmdReal = 'curl -sL -m 5 https://api.ipify.org || wget -qO- --timeout=5 https://api.ipify.org || echo "Network Error"';
-			var cmdPsiphon = 'curl -sL -m 5 --socks5-hostname 127.0.0.1:' + sPort + ' https://api.ipify.org || echo "Disconnected"';
+		// تابع هوشمند فیلتر و رندر لاگ‌ها
+		function fetchLog() {
+			const logArea = document.getElementById('psiphon_live_log');
+			if (!logArea) return; 
+			
+			L.resolveDefault(L.fs.read('/tmp/psiphon.log'), '').then(function(res) {
+				if (res && res.trim() !== '') {
+					const lines = res.split('\n');
+					const filteredLog = [];
 
-			// آپدیت وضعیت آی‌پی واقعی شبکه
-			L.fs.exec('/bin/sh', ['-c', cmdReal]).then(function(res) {
-				var el = document.getElementById('ip_real');
-				if (el) el.textContent = res.stdout.trim() || 'Network Error';
-			});
+					for (let i = 0; i < lines.length; i++) {
+						const line = lines[i].trim();
+						if (line === '') continue;
 
-			// آپدیت وضعیت آی‌پی پروکسی سایفون
-			L.fs.exec('/bin/sh', ['-c', cmdPsiphon]).then(function(res) {
-				var el = document.getElementById('ip_psiphon');
-				if (el) {
-					var out = res.stdout.trim();
-					el.textContent = out;
-					el.style.color = (out === 'Disconnected') ? '#ff4040' : '#00ff66';
+						try {
+							const logObj = JSON.parse(line);
+							const time = logObj.timestamp ? logObj.timestamp.substring(11, 19) : "";
+							
+							if (logObj.noticeType === "ConnectedServerRegion") {
+								filteredLog.push("[" + time + "] 🟢 CONNECTED TO SERVER REGION: " + logObj.data.serverRegion);
+							} else if (logObj.noticeType === "Tunnels") {
+								filteredLog.push("[" + time + "] ⚡ Active Tunnels Count: " + logObj.data.count);
+							} else if (logObj.noticeType === "TrafficRateLimits") {
+								const down = (logObj.data.downstreamBytesPerSecond / 1024).toFixed(1);
+								const up = (logObj.data.upstreamBytesPerSecond / 1024).toFixed(1);
+								filteredLog.push("[" + time + "] 📊 Speed -> Down: " + down + " KB/s | Up: " + up + " KB/s");
+							} else if (logObj.noticeType === "ClientRegion") {
+								filteredLog.push("[" + time + "] 🌍 Current Internet Uplink Location: " + logObj.data.region);
+							} else if (logObj.noticeType === "SkipServerEntry") {
+								filteredLog.push("[" + time + "] ⚠️ Skipping Blocked Server: " + (logObj.data.reason || "Timeout"));
+							}
+						} catch (e) {
+							if (!line.includes(" Listening") && !line.includes("Parameters") && !line.includes("AvailableEgress") && !line.includes("ActiveAuthorizationIDs")) {
+								filteredLog.push(line);
+							}
+						}
+					}
+					logArea.value = filteredLog.length > 0 ? filteredLog.join('\n') : _('Standby...');
+					logArea.scrollTop = logArea.scrollHeight;
+				} else {
+					logArea.value = _('Service stopped or log empty.');
 				}
 			});
+		}
 
-			// خواندن فایل لاگ سیستم
-			L.fs.exec('/usr/bin/tail', ['-n', '20', '/tmp/psiphon.log']).then(function(res) {
-				var el = document.getElementById('psiphon_log');
-				if (el) el.value = res.stdout.trim() || 'Service stopped or log empty.';
-			});
-		}, 5);
+		// راه‌اندازی تسک‌های خودکار و زمان‌بندی زنده LuCI Poll API
+		L.Poll.add(function() {
+			return Promise.all([
+				fetchLog()
+			]);
+		}, 3);
+
+		L.Poll.add(function() {
+			return Promise.all([
+				refreshIPs()
+			]);
+		}, 10);
+
+		// اجرای اولیه پس از لود صفحه
+		setTimeout(function() {
+			refreshIPs();
+			fetchLog();
+		}, 1000);
 
 		return m.render();
 	}
 });
-EOC
+EOF
 
-# ۴. ایجاد فایل منو لوسی در بخش Services (با تعریف منوی مادر برای جلوگیری از مخفی شدن)
-cat << 'EOC' > /usr/share/luci/menu.d/luci-app-psiphon.json
+# ۴. ایجاد فایل منو (Menu JSON) - ثبت در بخش Services لوسی
+cat << 'EOF' > /usr/share/luci/menu.d/luci-app-psiphon.json
 {
-	"admin/services": {
-		"title": "Services",
-		"order": 40,
-		"index": true
-	},
 	"admin/services/psiphon": {
-		"title": "Psiphon VPN",
-		"order": 1,
+		"title": "Psiphon",
 		"action": {
 			"type": "view",
 			"path": "services/psiphon"
@@ -246,10 +445,10 @@ cat << 'EOC' > /usr/share/luci/menu.d/luci-app-psiphon.json
 		}
 	}
 }
-EOC
+EOF
 
-# ۵. ایجاد فایل جامع دسترسی‌های امنیتی سیستم (ACL JSON)
-cat << 'EOC' > /usr/share/rpcd/acl.d/luci-app-psiphon.json
+# ۵. ایجاد فایل دسترسی امنیتی سیستم (ACL JSON) - مجوز دسترسی به فرآیندها
+cat << 'EOF' > /usr/share/rpcd/acl.d/luci-app-psiphon.json
 {
 	"luci-app-psiphon": {
 		"description": "Grant access to Psiphon control and execution",
@@ -263,22 +462,25 @@ cat << 'EOC' > /usr/share/rpcd/acl.d/luci-app-psiphon.json
 			"file": {
 				"/tmp/psiphon.log": [ "write" ],
 				"/bin/sh": [ "exec" ],
-				"/usr/bin/tail": [ "exec" ],
 				"/etc/init.d/psiphon": [ "exec" ]
 			},
 			"uci": [ "psiphon" ]
 		}
 	}
 }
-EOC
-
-echo "LuCI Panel files with FULL country list successfully prepared."
 EOF
 
-# اجرای اسکریپت آماده‌سازی ساختار لوسی
-chmod +x /tmp/install_psiphon_luci.sh
-/tmp/install_psiphon_luci.sh
-rm /tmp/install_psiphon_luci.sh
+# ۶. تنظیم دقیق پرمیشن‌ها و سطوح دسترسی تمامی فایل‌ها
+chmod 644 /etc/config/psiphon
+chmod 644 /www/luci-static/resources/view/services/psiphon.js
+chmod 644 /usr/share/luci/menu.d/luci-app-psiphon.json
+chmod 644 /usr/share/rpcd/acl.d/luci-app-psiphon.json
+
+# ۷. راه اندازی مجدد RPC سیستم و پاکسازی تمام کش‌های LuCI برای رندر مجدد
+/etc/init.d/rpcd restart
+rm -rf /tmp/luci-indexcache /tmp/luci-modulecache
+
+echo "Psiphon panel updated successfully! Please hard refresh your browser (Ctrl+F5)."
 
 
 ```
